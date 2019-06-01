@@ -28,13 +28,13 @@ type Media struct {
 }
 
 func main() {
-	var NowID int32 = 0
+	var LatestID int32 = 0
 
 	for {
 		log.Println(time.Now())
-		log.Println("NowId=", NowID)
+		log.Println("NowId=", LatestID)
 
-		SexArticles, err := getLatestList(NowID)
+		SexArticles, err := getLatestList(LatestID)
 		if err != nil {
 			log.Println(err)
 			return
@@ -44,10 +44,12 @@ func main() {
 		for _, value := range SexArticles {
 			fmt.Println("id=", value.ID)
 			fmt.Printf("Title= %s \n", value.Title)
+
 			fmt.Println("-------Media-------")
 			for _, MediaValue := range value.Media {
 				fmt.Printf("PicURL= %s \n", MediaValue.PicURL)
 			}
+
 			fmt.Println("-------MediaMeta-------")
 			for _, MediaMetaValue := range value.MediaMeta {
 				fmt.Printf("id= %s \n", MediaMetaValue.(map[string]interface{})["id"].(string))
@@ -55,23 +57,22 @@ func main() {
 				fmt.Printf("type= %s \n\n", MediaMetaValue.(map[string]interface{})["type"].(string))
 			}
 			//fmt.Printf("MediaMeta=%v \n", value.MediaMeta)
-
-			if value.ID > NowID {
-				NowID = value.ID
+			fmt.Printf("文章連結:%s \n\n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
+			if value.ID > LatestID {
+				LatestID = value.ID
 			}
 		}
-
 		time.Sleep(10 * time.Second)
 	}
-
 }
 
-func getLatestList(LatestID int32) ([]ArticleInfo, error) {
+func getLatestList(afterID int32) ([]ArticleInfo, error) {
 	params := make(map[string]string)
 	params["limit"] = "10"
-	if LatestID != 0 {
-		params["after"] = strconv.FormatInt(int64(LatestID), 10)
+	if afterID != 0 {
+		params["after"] = strconv.FormatInt(int64(afterID), 10)
 	}
+
 	resp, err := Get(ListURL, params, nil)
 	if err != nil {
 		log.Println(err)
@@ -84,7 +85,6 @@ func getLatestList(LatestID int32) ([]ArticleInfo, error) {
 		log.Println(err)
 		return nil, err
 	}
-
 	//fmt.Println(string(sitemap))
 
 	var Articles []ArticleInfo
