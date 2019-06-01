@@ -37,25 +37,32 @@ type Media struct {
 // }
 
 func main() {
-	resp, err := http.Get(ListURL + "&limit=1")
+
+	params := make(map[string]string)
+	params["limit"] = "1"
+
+	resp, err := Get(ListURL, params, nil)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
 	defer resp.Body.Close()
+
 	sitemap, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println(err)
 		return
 	}
 
+	fmt.Println(string(sitemap))
 	var SexArticles []ArticleInfo
 	if err := json.Unmarshal([]byte(sitemap), &SexArticles); err != nil {
 		fmt.Println("error:", err)
 	}
 
 	//fmt.Printf("%#v\n", SexArticles)
+
 	for _, value := range SexArticles {
 		fmt.Println("id=", value.ID)
 		fmt.Printf("Title= %s \n", value.Title)
@@ -75,4 +82,33 @@ func main() {
 	//fmt.Println(SexArticles[0].MediaMeta[0].(map[string]interface{})["id"].(string))
 	//fmt.Println(SexArticles.MediaMeta.(map[string]interface{})["normalizedUrl"].(string))
 
+}
+
+//Get http get method
+func Get(url string, params map[string]string, headers map[string]string) (*http.Response, error) {
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Println(err)
+		//nil只能賦值給指標
+		return nil, fmt.Errorf("new request is fail:%s", url)
+	}
+
+	q := req.URL.Query()
+	if params != nil {
+		for key, value := range params {
+			q.Add(key, value)
+		}
+		req.URL.RawQuery = q.Encode()
+	}
+
+	if headers != nil {
+		for key, value := range headers {
+			req.Header.Add(key, value)
+		}
+	}
+
+	client := &http.Client{}
+	log.Printf("Go GET URL : %s \n", req.URL.String())
+
+	return client.Do(req)
 }
