@@ -18,6 +18,8 @@ const (
 	BoardURL   = "http://www.dcard.tw/f/sex/p/"
 	TgbotToken = "755108266:AAFFw6H5k9LIMOcKlrp7Au622OL46JnGzec"
 	ChatID     = -1001494629371
+	limitNum   = 30
+	SleepNum   = 30
 )
 
 type ArticleInfo struct {
@@ -38,12 +40,11 @@ func main() {
 	if err != nil {
 		log.Panic(err)
 	}
-
 	bot.Debug = false
 
 	for {
 		log.Println(time.Now())
-		log.Println("NowId=", LatestID)
+		log.Println("LatestID=", LatestID)
 
 		var SendCount int = 0
 		SexArticles, err := getLatestList(LatestID)
@@ -87,14 +88,14 @@ func main() {
 			SendCount++
 			fmt.Printf("%d new articles have been sent------------------------ \n", SendCount)
 		}
-		time.Sleep(10 * time.Second)
+		time.Sleep(SleepNum * time.Second)
 	}
 }
 
 //get latest article list
 func getLatestList(afterID int32) ([]ArticleInfo, error) {
 	params := make(map[string]string)
-	params["limit"] = "10"
+	params["limit"] = strconv.FormatInt(int64(limitNum), 10)
 	if afterID != 0 {
 		params["after"] = strconv.FormatInt(int64(afterID), 10)
 	}
@@ -128,7 +129,6 @@ func Get(url string, params map[string]string, headers map[string]string) (*http
 
 	if err != nil {
 		log.Println(err)
-		//nil只能賦值給指標
 		return nil, fmt.Errorf("new request is fail:%s", url)
 	}
 
