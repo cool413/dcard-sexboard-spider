@@ -8,12 +8,16 @@ import (
 	"net/http"
 	"strconv"
 	"time"
+
+	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
 )
 
 const (
 	ListURL    = "https://www.dcard.tw/_api/forums/sex/posts?popular=false"
 	ContentURL = "https://www.dcard.tw/_api/posts/"
 	BoardURL   = "http://www.dcard.tw/f/sex/p/"
+	TgbotToken = "755108266:AAFFw6H5k9LIMOcKlrp7Au622OL46JnGzec"
+	ChatID     = -1001494629371
 )
 
 type ArticleInfo struct {
@@ -30,6 +34,13 @@ type Media struct {
 func main() {
 	var LatestID int32 = 0
 
+	bot, err := tgbotapi.NewBotAPI(TgbotToken)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	bot.Debug = true
+
 	for {
 		log.Println(time.Now())
 		log.Println("NowId=", LatestID)
@@ -42,12 +53,21 @@ func main() {
 		//fmt.Printf("%#v\n", SexArticles)
 
 		for _, value := range SexArticles {
+			var MsgContent string = ""
+
+			fmt.Printf("文章連結:%s \n\n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
+			if value.ID > LatestID {
+				LatestID = value.ID
+			}
 			fmt.Println("id=", value.ID)
 			fmt.Printf("Title= %s \n", value.Title)
 
+			MsgContent += fmt.Sprintf("%s \n", value.Title)
+			MsgContent += fmt.Sprintf("文章連結:%s \n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
 			fmt.Println("-------Media-------")
 			for _, MediaValue := range value.Media {
 				fmt.Printf("PicURL= %s \n", MediaValue.PicURL)
+				MsgContent += fmt.Sprintf("PicURL= %s \n", MediaValue.PicURL)
 			}
 
 			fmt.Println("-------MediaMeta-------")
@@ -57,15 +77,16 @@ func main() {
 				fmt.Printf("type= %s \n\n", MediaMetaValue.(map[string]interface{})["type"].(string))
 			}
 			//fmt.Printf("MediaMeta=%v \n", value.MediaMeta)
-			fmt.Printf("文章連結:%s \n\n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
-			if value.ID > LatestID {
-				LatestID = value.ID
-			}
+
+			msg := tgbotapi.NewMessage(ChatID, MsgContent)
+
+			bot.Send(msg)
 		}
 		time.Sleep(10 * time.Second)
 	}
 }
 
+//get latest article list
 func getLatestList(afterID int32) ([]ArticleInfo, error) {
 	params := make(map[string]string)
 	params["limit"] = "10"
