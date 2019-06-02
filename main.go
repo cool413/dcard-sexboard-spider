@@ -39,12 +39,13 @@ func main() {
 		log.Panic(err)
 	}
 
-	bot.Debug = true
+	bot.Debug = false
 
 	for {
 		log.Println(time.Now())
 		log.Println("NowId=", LatestID)
 
+		var SendCount int = 0
 		SexArticles, err := getLatestList(LatestID)
 		if err != nil {
 			log.Println(err)
@@ -67,7 +68,10 @@ func main() {
 			fmt.Println("-------Media-------")
 			for _, MediaValue := range value.Media {
 				fmt.Printf("PicURL= %s \n", MediaValue.PicURL)
-				MsgContent += fmt.Sprintf("PicURL= %s \n", MediaValue.PicURL)
+				//MsgContent += fmt.Sprintf("PicURL= %s \n", MediaValue.PicURL)
+
+				PhotoMsg := tgbotapi.NewPhotoShare(ChatID, MediaValue.PicURL)
+				bot.Send(PhotoMsg)
 			}
 
 			fmt.Println("-------MediaMeta-------")
@@ -78,9 +82,10 @@ func main() {
 			}
 			//fmt.Printf("MediaMeta=%v \n", value.MediaMeta)
 
-			msg := tgbotapi.NewMessage(ChatID, MsgContent)
-
-			bot.Send(msg)
+			TextMsg := tgbotapi.NewMessage(ChatID, MsgContent)
+			bot.Send(TextMsg)
+			SendCount++
+			fmt.Printf("%d new articles have been sent------------------------ \n", SendCount)
 		}
 		time.Sleep(10 * time.Second)
 	}
