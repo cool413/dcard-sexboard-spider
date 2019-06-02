@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
@@ -15,17 +16,25 @@ import (
 const (
 	ListURL    = "https://www.dcard.tw/_api/forums/sex/posts?popular=false"
 	ContentURL = "https://www.dcard.tw/_api/posts/"
-	BoardURL   = "http://www.dcard.tw/f/sex/p/"
+	LinkURL    = "http://www.dcard.tw/f/sex/p/"
+	CommentURL = "http://dcard.tw/_api/posts/%d/comments"
+
 	TgbotToken = "755108266:AAFFw6H5k9LIMOcKlrp7Au622OL46JnGzec"
 	ChatID     = -1001494629371
-	limitNum   = 30
+	limitNum   = 10
 	SleepNum   = 30
 )
 
 type ArticleInfo struct {
-	ID        int32   `json:"id"`
+	ID        int64   `json:"id"`
 	Title     string  `json:"title"`
 	Media     []Media `json:"media"`
+	MediaMeta []interface{}
+}
+
+type CommentInfo struct {
+	Content   int64  `json:"content"`
+	Title     string `json:"title"`
 	MediaMeta []interface{}
 }
 
@@ -34,7 +43,7 @@ type Media struct {
 }
 
 func main() {
-	var LatestID int32 = 0
+	var LatestID int64 = 0
 
 	bot, err := tgbotapi.NewBotAPI(TgbotToken)
 	if err != nil {
@@ -43,57 +52,61 @@ func main() {
 	bot.Debug = false
 
 	for {
-		log.Println(time.Now())
-		log.Println("LatestID=", LatestID)
-
+		fmt.Println(time.Now())
+		fmt.Printf("------------------------ LatestID:%d ------------------------", LatestID)
 		var SendCount int = 0
+
 		SexArticles, err := getLatestList(LatestID)
 		if err != nil {
 			log.Println(err)
 			return
 		}
 		//fmt.Printf("%#v\n", SexArticles)
-
 		for _, value := range SexArticles {
 			var MsgContent string = ""
+			var ArticleID = value.ID
 
-			fmt.Printf("文章連結:%s \n\n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
-			if value.ID > LatestID {
-				LatestID = value.ID
-			}
-			fmt.Println("id=", value.ID)
-			fmt.Printf("Title= %s \n", value.Title)
-
-			MsgContent += fmt.Sprintf("%s \n", value.Title)
-			MsgContent += fmt.Sprintf("文章連結:%s \n", BoardURL+strconv.FormatInt(int64(value.ID), 10))
-			fmt.Println("-------Media-------")
-			for _, MediaValue := range value.Media {
-				fmt.Printf("PicURL= %s \n", MediaValue.PicURL)
-				//MsgContent += fmt.Sprintf("PicURL= %s \n", MediaValue.PicURL)
-
-				PhotoMsg := tgbotapi.NewPhotoShare(ChatID, MediaValue.PicURL)
-				bot.Send(PhotoMsg)
+			if ArticleID > LatestID {
+				LatestID = ArticleID
 			}
 
-			fmt.Println("-------MediaMeta-------")
 			for _, MediaMetaValue := range value.MediaMeta {
-				fmt.Printf("id= %s \n", MediaMetaValue.(map[string]interface{})["id"].(string))
-				fmt.Printf("url= %s \n", MediaMetaValue.(map[string]interface{})["url"].(string))
-				fmt.Printf("type= %s \n\n", MediaMetaValue.(map[string]interface{})["type"].(string))
+				PicURL := MediaMetaValue.(map[string]interface{})["normalizedUrl"].(string)
+				PicType := MediaMetaValue.(map[string]interface{})["type"].(string)
+
+				if strings.Index(strings.ToLower(PicType), "thumbnail") == -1 {
+					PhotoMsg := tgbotapi.NewPhotoShare(ChatID, PicURL)
+					bot.Send(PhotoMsg)
+				}
+
+				// fmt.Printf("url= %s \n", MediaMetaValue.(map[string]interface{})["normalizedUrl"].(string))
+				// fmt.Printf("type= %s \n\n", MediaMetaValue.(map[string]interface{})["type"].(string))
 			}
 			//fmt.Printf("MediaMeta=%v \n", value.MediaMeta)
 
+			//get Comments
+			// Comments, err := getComments(ArticleID)
+			// if err != nil {
+			// 	log.Println(err)
+			// 	return
+			// }
+			// fmt.Printf("%#v\n", Comments)
+
+			MsgContent += fmt.Sprintf("%s \n", value.Title)
+			MsgContent += fmt.Sprintf("文章連結:%s \n", LinkURL+strconv.FormatInt(int64(ArticleID), 10))
 			TextMsg := tgbotapi.NewMessage(ChatID, MsgContent)
 			bot.Send(TextMsg)
 			SendCount++
-			fmt.Printf("%d new articles have been sent------------------------ \n", SendCount)
+
+			fmt.Printf("%s \n", MsgContent)
+			fmt.Printf("------------------------ %d new articles have been sent ------------------------ \n", SendCount)
 		}
 		time.Sleep(SleepNum * time.Second)
 	}
 }
 
 //get latest article list
-func getLatestList(afterID int32) ([]ArticleInfo, error) {
+func getLatestList(afterID int64) ([]ArticleInfo, error) {
 	params := make(map[string]string)
 	params["limit"] = strconv.FormatInt(int64(limitNum), 10)
 	if afterID != 0 {
@@ -121,6 +134,31 @@ func getLatestList(afterID int32) ([]ArticleInfo, error) {
 	}
 
 	return Articles, nil
+}
+
+//get Comments
+func getComments(articleID int64) ([]CommentInfo, error) {
+	resp, err := Get(fmt.Sprintf(CommentURL, articleID), nil, nil)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+
+	defer resp.Body.Close()
+	sitemap, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return nil, err
+	}
+	//fmt.Println(string(sitemap))
+
+	var Comments []CommentInfo
+	if err := json.Unmarshal([]byte(sitemap), &Comments); err != nil {
+		log.Println(string(sitemap))
+		return nil, fmt.Errorf("json.Unmarshal error:%s", err)
+	}
+
+	return Comments, nil
 }
 
 //Get http get method
