@@ -6,109 +6,120 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api"
+	"mvdan.cc/xurls"
 )
 
 const (
 	ListURL    = "https://www.dcard.tw/_api/forums/sex/posts?popular=false"
-	ContentURL = "https://www.dcard.tw/_api/posts/"
+	ContentURL = "https://www.dcard.tw/_api/posts/%d"
 	LinkURL    = "http://www.dcard.tw/f/sex/p/"
 	CommentURL = "http://dcard.tw/_api/posts/%d/comments"
 
-	TgbotToken = "755108266:AAFFw6H5k9LIMOcKlrp7Au622OL46JnGzec"
-	ChatID     = -1001494629371
-	limitNum   = 10
-	SleepNum   = 30
+	LimitNum = 20
+	SleepNum = 60
 )
 
-type ArticleInfo struct {
-	ID        int64   `json:"id"`
-	Title     string  `json:"title"`
-	Media     []Media `json:"media"`
-	MediaMeta []interface{}
-}
-
-type CommentInfo struct {
-	Content   int64  `json:"content"`
-	Title     string `json:"title"`
-	MediaMeta []interface{}
-}
-
-type Media struct {
-	PicURL string `json:"url"`
-}
-
 func main() {
-	var LatestID int64 = 0
-
-	bot, err := tgbotapi.NewBotAPI(TgbotToken)
+	var latestID int64 = 0
+	tgBotToken := os.Getenv("TgBotToken")
+	tgChannelID, err := strconv.ParseInt(os.Getenv("TgChannelId"), 10, 64)
 	if err != nil {
-		log.Panic(err)
+		log.Println(err)
+		return
+	}
+
+	bot, err := tgbotapi.NewBotAPI(tgBotToken)
+	if err != nil {
+		log.Println(err)
+		return
 	}
 	bot.Debug = false
 
 	for {
 		fmt.Println(time.Now())
-		fmt.Printf("------------------------ LatestID:%d ------------------------", LatestID)
-		var SendCount int = 0
+		fmt.Printf("------------------------ LatestId: %d ------------------------\n", latestID)
+		sendCount := 0
 
-		SexArticles, err := getLatestList(LatestID)
+		sexArticles, err := getLatestList(latestID)
 		if err != nil {
 			log.Println(err)
 			return
 		}
-		//fmt.Printf("%#v\n", SexArticles)
-		for _, value := range SexArticles {
-			var MsgContent string = ""
-			var ArticleID = value.ID
+		fmt.Printf("Total article: %d \n", len(sexArticles))
 
-			if ArticleID > LatestID {
-				LatestID = ArticleID
+		for _, value := range sexArticles {
+			msgContent := ""
+			articleID := value.ID
+
+			articleContent, err := getContent(articleID)
+			content := articleContent.Content
+			if err != nil {
+				log.Println(err)
+				return
 			}
 
-			for _, MediaMetaValue := range value.MediaMeta {
-				PicURL := MediaMetaValue.(map[string]interface{})["normalizedUrl"].(string)
-				PicType := MediaMetaValue.(map[string]interface{})["type"].(string)
+			comments, err := getComments(articleID)
+			if err != nil {
+				log.Println(err)
+				return
+			}
 
-				if strings.Index(strings.ToLower(PicType), "thumbnail") == -1 {
-					PhotoMsg := tgbotapi.NewPhotoShare(ChatID, PicURL)
-					bot.Send(PhotoMsg)
+			if articleID > latestID {
+				latestID = articleID
+			}
+
+			for _, mediaMetaValue := range value.MediaMeta {
+				picURL := mediaMetaValue.(map[string]interface{})["normalizedUrl"].(string)
+				picType := mediaMetaValue.(map[string]interface{})["type"].(string)
+
+				if strings.Index(strings.ToLower(picType), "thumbnail") == -1 {
+					photoMsg := tgbotapi.NewPhotoShare(tgChannelID, picURL)
+
+					bot.Send(photoMsg)
 				}
-
-				// fmt.Printf("url= %s \n", MediaMetaValue.(map[string]interface{})["normalizedUrl"].(string))
-				// fmt.Printf("type= %s \n\n", MediaMetaValue.(map[string]interface{})["type"].(string))
 			}
-			//fmt.Printf("MediaMeta=%v \n", value.MediaMeta)
 
-			//get Comments
-			// Comments, err := getComments(ArticleID)
-			// if err != nil {
-			// 	log.Println(err)
-			// 	return
-			// }
-			// fmt.Printf("%#v\n", Comments)
+			msgContent += fmt.Sprintf("標題: %s \n", value.Title)
+			msgContent += getContentURL(content)
+			msgContent += fmt.Sprintf("文章連結: %s \n", LinkURL+strconv.FormatInt(int64(articleID), 10))
+			textMsg := tgbotapi.NewMessage(tgChannelID, msgContent)
+			myMsg, _ := bot.Send(textMsg)
 
-			MsgContent += fmt.Sprintf("%s \n", value.Title)
-			MsgContent += fmt.Sprintf("文章連結:%s \n", LinkURL+strconv.FormatInt(int64(ArticleID), 10))
-			TextMsg := tgbotapi.NewMessage(ChatID, MsgContent)
-			bot.Send(TextMsg)
-			SendCount++
+			for _, value := range comments {
+				content := value.Content
 
-			fmt.Printf("%s \n", MsgContent)
-			fmt.Printf("------------------------ %d new articles have been sent ------------------------ \n", SendCount)
+				for _, mediaMetaValue := range value.MediaMeta {
+					picURL := mediaMetaValue.(map[string]interface{})["normalizedUrl"].(string)
+					picType := mediaMetaValue.(map[string]interface{})["type"].(string)
+
+					if strings.Index(strings.ToLower(picType), "thumbnail") == -1 {
+						photoMsg := tgbotapi.NewPhotoShare(tgChannelID, picURL)
+						photoMsg.Caption = content
+						photoMsg.ReplyToMessageID = myMsg.MessageID
+
+						bot.Send(photoMsg)
+					}
+				}
+			}
+
+			sendCount++
+			fmt.Printf("%s \n", msgContent)
+			fmt.Printf("------------------------ Sent %d articles ------------------------ \n", sendCount)
 		}
 		time.Sleep(SleepNum * time.Second)
 	}
 }
 
-//get latest article list
-func getLatestList(afterID int64) ([]ArticleInfo, error) {
+//Get the latest article list
+func getLatestList(afterID int64) ([]ArticleList, error) {
 	params := make(map[string]string)
-	params["limit"] = strconv.FormatInt(int64(limitNum), 10)
+	params["limit"] = strconv.FormatInt(int64(LimitNum), 10)
 	if afterID != 0 {
 		params["after"] = strconv.FormatInt(int64(afterID), 10)
 	}
@@ -116,49 +127,88 @@ func getLatestList(afterID int64) ([]ArticleInfo, error) {
 	resp, err := Get(ListURL, params, nil)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return []ArticleList{}, err
 	}
 
 	defer resp.Body.Close()
 	sitemap, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return []ArticleList{}, err
 	}
 	//fmt.Println(string(sitemap))
 
-	var Articles []ArticleInfo
-	if err := json.Unmarshal([]byte(sitemap), &Articles); err != nil {
+	var articleList []ArticleList
+	if err := json.Unmarshal([]byte(sitemap), &articleList); err != nil {
 		log.Println(string(sitemap))
-		return nil, fmt.Errorf("json.Unmarshal error:%s", err)
+		return []ArticleList{}, fmt.Errorf("getLatestList json.Unmarshal error:%s", err)
 	}
 
-	return Articles, nil
+	return articleList, nil
 }
 
-//get Comments
-func getComments(articleID int64) ([]CommentInfo, error) {
+//Get article content
+func getContent(articleID int64) (ArticleContent, error) {
+	resp, err := Get(fmt.Sprintf(ContentURL, articleID), nil, nil)
+	if err != nil {
+		log.Println(err)
+		return ArticleContent{}, err
+	}
+
+	defer resp.Body.Close()
+	sitemap, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		log.Println(err)
+		return ArticleContent{}, err
+	}
+	//fmt.Println(string(sitemap))
+
+	var articleContent ArticleContent
+	if err := json.Unmarshal([]byte(sitemap), &articleContent); err != nil {
+		log.Println(string(sitemap))
+		return ArticleContent{}, fmt.Errorf("getContent json.Unmarshal error:%s", err)
+	}
+
+	return articleContent, nil
+}
+
+//Get article comments
+func getComments(articleID int64) ([]ArticleComment, error) {
 	resp, err := Get(fmt.Sprintf(CommentURL, articleID), nil, nil)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return []ArticleComment{}, err
 	}
 
 	defer resp.Body.Close()
 	sitemap, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println(err)
-		return nil, err
+		return []ArticleComment{}, err
 	}
 	//fmt.Println(string(sitemap))
 
-	var Comments []CommentInfo
-	if err := json.Unmarshal([]byte(sitemap), &Comments); err != nil {
+	var articleComment []ArticleComment
+	if err := json.Unmarshal([]byte(sitemap), &articleComment); err != nil {
 		log.Println(string(sitemap))
-		return nil, fmt.Errorf("json.Unmarshal error:%s", err)
+		return []ArticleComment{}, fmt.Errorf("getComments json.Unmarshal error:%s", err)
 	}
 
-	return Comments, nil
+	return articleComment, nil
+}
+
+//Get the URL in the article
+func getContentURL(content string) string {
+	var URLstring string
+
+	URLary := xurls.Strict().FindAllString(content, -1)
+	for _, URL := range URLary {
+		if strings.Index(URL, "i.imgur.com") == -1 {
+			URLstring += fmt.Sprintf("內文連結: %s \n", URL)
+		}
+	}
+
+	return URLstring
 }
 
 //Get http get method

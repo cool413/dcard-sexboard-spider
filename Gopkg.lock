@@ -17,9 +17,20 @@
   revision = "a90a01d73ae432e2611d178c18367fbaa13e0154"
   version = "v1.0.1"
 
+[[projects]]
+  digest = "1:0d72291ecb10a37e75f0484eb8e700b0cffbd2501f6e63b282028dcc7830d33c"
+  name = "mvdan.cc/xurls"
+  packages = ["."]
+  pruneopts = "UT"
+  revision = "e52e821cbfe8fe163ff6f8628ab5869b11fc05af"
+  version = "v2.0.0"
+
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  input-imports = ["github.com/go-telegram-bot-api/telegram-bot-api"]
+  input-imports = [
+    "github.com/go-telegram-bot-api/telegram-bot-api",
+    "mvdan.cc/xurls",
+  ]
   solver-name = "gps-cdcl"
   solver-version = 1
